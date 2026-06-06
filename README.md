@@ -79,7 +79,7 @@ You can also generate a module without fields and add the fillable fields
 and validation rules later:
 
 ```sh
-docker compose exec app php artisan make:module AuditLog
+docker compose exec app php artisan make:module Product
 ```
 
 For the `Product` example, the command generates this structure:
