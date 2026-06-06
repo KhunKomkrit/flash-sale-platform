@@ -1,0 +1,50 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\Store{{ class }}Request;
+use App\Http\Requests\Update{{ class }}Request;
+use App\Http\Resources\{{ class }}Resource;
+use App\Models\{{ class }};
+use App\Services\{{ class }}Service;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Http\Response;
+
+class {{ class }}Controller extends Controller
+{
+    public function __construct(private readonly {{ class }}Service $service)
+    {
+    }
+
+    public function index(): AnonymousResourceCollection
+    {
+        return {{ class }}Resource::collection($this->service->paginate());
+    }
+
+    public function store(Store{{ class }}Request $request): JsonResponse
+    {
+        return (new {{ class }}Resource($this->service->create($request->validated())))
+            ->response()
+            ->setStatusCode(Response::HTTP_CREATED);
+    }
+
+    public function show({{ class }} ${{ variable }}): {{ class }}Resource
+    {
+        return new {{ class }}Resource($this->service->findOrFail(${{ variable }}->getKey()));
+    }
+
+    public function update(Update{{ class }}Request $request, {{ class }} ${{ variable }}): {{ class }}Resource
+    {
+        return new {{ class }}Resource(
+            $this->service->update(${{ variable }}, $request->validated())
+        );
+    }
+
+    public function destroy({{ class }} ${{ variable }}): Response
+    {
+        $this->service->delete(${{ variable }});
+
+        return response()->noContent();
+    }
+}

@@ -1,0 +1,45 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\{{ class }};
+use App\Repositories\{{ class }}Repository;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+
+class {{ class }}Service
+{
+    public function __construct(private readonly {{ class }}Repository $repository)
+    {
+    }
+
+    public function paginate(): LengthAwarePaginator
+    {
+        return $this->repository->paginate();
+    }
+
+    public function findOrFail(int|string $id): {{ class }}
+    {
+        return $this->repository->findOrFail($id);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function create(array $data): {{ class }}
+    {
+        return $this->repository->create($data);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function update({{ class }} ${{ variable }}, array $data): {{ class }}
+    {
+        return $this->repository->update(${{ variable }}, $data);
+    }
+
+    public function delete({{ class }} ${{ variable }}): void
+    {
+        $this->repository->delete(${{ variable }});
+    }
+}
