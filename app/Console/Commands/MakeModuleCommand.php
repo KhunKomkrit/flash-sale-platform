@@ -63,15 +63,13 @@ class MakeModuleCommand extends Command
         try {
             $names = $this->normalizeName((string) $this->argument('name'));
             $fields = $this->parseFields($this->option('fields'));
-            $targets = $this->targetFiles($names['class']);
-            $routePath = $this->path('routes/api.php');
-            $routeContents = $this->files->get($routePath);
+            $targets = $this->targetFiles($names);
 
-            $this->assertNoCollisions($targets, $routeContents, $names);
+            $this->assertModuleRouteLoaderIsConfigured();
+            $this->assertNoCollisions($targets);
 
             $generatedFiles = $this->renderFiles($targets, $names, $fields);
-            $updatedRoutes = $this->renderRoutes($routeContents, $names);
-            $this->writeAtomically($generatedFiles, $routePath, $routeContents, $updatedRoutes);
+            $this->writeAtomically($generatedFiles);
         } catch (RuntimeException $exception) {
             $this->components->error($exception->getMessage());
 
@@ -208,10 +206,13 @@ class MakeModuleCommand extends Command
     }
 
     /**
+     * @param  array{class: string, uri: string, variable: string}  $names
      * @return array<string, string>
      */
-    private function targetFiles(string $class): array
+    private function targetFiles(array $names): array
     {
+        $class = $names['class'];
+
         return [
             'model' => $this->path("app/Models/{$class}.php"),
             'controller' => $this->path("app/Http/Controllers/{$class}Controller.php"),
@@ -220,29 +221,39 @@ class MakeModuleCommand extends Command
             'resource' => $this->path("app/Http/Resources/{$class}Resource.php"),
             'service' => $this->path("app/Services/{$class}Service.php"),
             'repository' => $this->path("app/Repositories/{$class}Repository.php"),
+            'route' => $this->path("routes/api/{$names['uri']}.php"),
         ];
     }
 
     /**
      * @param  array<string, string>  $targets
-     * @param  array{class: string, uri: string, variable: string}  $names
      */
-    private function assertNoCollisions(array $targets, string $routes, array $names): void
+    private function assertNoCollisions(array $targets): void
     {
         foreach ($targets as $target) {
             if ($this->files->exists($target)) {
                 throw new RuntimeException("File [{$target}] already exists. No files were changed.");
             }
         }
+    }
 
-        $controller = preg_quote($names['class'].'Controller', '/');
-        $uri = preg_quote($names['uri'], '/');
+    private function assertModuleRouteLoaderIsConfigured(): void
+    {
+        $routePath = $this->path('routes/api.php');
+
+        if (! $this->files->exists($routePath)) {
+            throw new RuntimeException("The module route loader is not configured in [{$routePath}]. No files were changed.");
+        }
+
+        $routes = $this->files->get($routePath);
 
         if (
-            preg_match('/^use\s+App\\\\Http\\\\Controllers\\\\'.$controller.'\s*;/m', $routes)
-            || preg_match('/Route::apiResource\(\s*[\'"]'.$uri.'[\'"]\s*,/m', $routes)
+            ! str_contains($routes, "Route::middleware('auth:sanctum')->group")
+            || ! preg_match('/glob\(\s*__DIR__\s*\.\s*[\'"]\/api\/\*\.php[\'"]\s*\)/', $routes)
+            || ! preg_match('/sort\(\s*\$moduleRouteFiles\s*,\s*SORT_STRING\s*\)/', $routes)
+            || ! preg_match('/require\s+\$moduleRouteFile\s*;/', $routes)
         ) {
-            throw new RuntimeException("An import or API resource route for [{$names['uri']}] already exists. No files were changed.");
+            throw new RuntimeException("The module route loader is not configured in [{$routePath}]. Restore the routes/api.php loader before generating modules.");
         }
     }
 
@@ -256,6 +267,7 @@ class MakeModuleCommand extends Command
     {
         $replacements = [
             '{{ class }}' => $names['class'],
+            '{{ uri }}' => $names['uri'],
             '{{ variable }}' => $names['variable'],
             '{{ fillable }}' => $this->renderFillable($fields),
             '{{ storeRules }}' => $this->renderRules($fields, 'storeRules'),
@@ -309,41 +321,12 @@ class MakeModuleCommand extends Command
     }
 
     /**
-     * @param  array{class: string, uri: string, variable: string}  $names
-     */
-    private function renderRoutes(string $routes, array $names): string
-    {
-        $import = "use App\\Http\\Controllers\\{$names['class']}Controller;\n";
-
-        if (preg_match('/^namespace\s+[^;]+;\s*$/m', $routes, $match, PREG_OFFSET_CAPTURE)) {
-            $offset = $match[0][1] + strlen($match[0][0]);
-            $routes = substr_replace($routes, "\n\n{$import}", $offset, 0);
-        } elseif (preg_match('/^<\?php\s*/', $routes, $match)) {
-            $routes = substr_replace($routes, "<?php\n\n{$import}", 0, strlen($match[0]));
-        } else {
-            throw new RuntimeException('Unable to locate the PHP opening tag in routes/api.php.');
-        }
-
-        $routes = rtrim($routes)."\n\n";
-        $routes .= "Route::middleware('auth:sanctum')->group(function () {\n";
-        $routes .= "    Route::apiResource('{$names['uri']}', {$names['class']}Controller::class);\n";
-        $routes .= "});\n";
-
-        return $routes;
-    }
-
-    /**
      * @param  array<string, string>  $generatedFiles
      */
-    private function writeAtomically(
-        array $generatedFiles,
-        string $routePath,
-        string $originalRoutes,
-        string $updatedRoutes,
-    ): void {
+    private function writeAtomically(array $generatedFiles): void
+    {
         $writtenFiles = [];
         $createdDirectories = [];
-        $routeWasWritten = false;
 
         try {
             foreach ($generatedFiles as $path => $contents) {
@@ -366,23 +349,13 @@ class MakeModuleCommand extends Command
                     $this->files->makeDirectory($directory, 0755, true);
                 }
 
+                $writtenFiles[] = $path;
+
                 if ($this->files->put($path, $contents) === false) {
                     throw new RuntimeException("Unable to write [{$path}].");
                 }
-
-                $writtenFiles[] = $path;
-            }
-
-            $routeWasWritten = true;
-
-            if ($this->files->put($routePath, $updatedRoutes) === false) {
-                throw new RuntimeException("Unable to update [{$routePath}].");
             }
         } catch (Throwable $exception) {
-            if ($routeWasWritten) {
-                $this->files->put($routePath, $originalRoutes);
-            }
-
             foreach (array_reverse($writtenFiles) as $path) {
                 $this->files->delete($path);
             }

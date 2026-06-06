@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Console\Commands\MakeModuleCommand;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Route;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\Process\Process;
 use Tests\TestCase;
@@ -24,7 +25,22 @@ class MakeModuleCommandTest extends TestCase
         $this->files->makeDirectory($this->projectPath.'/routes', 0755, true);
         $this->files->put(
             $this->projectPath.'/routes/api.php',
-            "<?php\n\nuse Illuminate\\Support\\Facades\\Route;\n\nRoute::get('/health', fn () => ['ok' => true]);\n"
+            <<<'PHP'
+<?php
+
+use Illuminate\Support\Facades\Route;
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/health', fn () => ['ok' => true]);
+
+    $moduleRouteFiles = glob(__DIR__.'/api/*.php') ?: [];
+    sort($moduleRouteFiles, SORT_STRING);
+
+    foreach ($moduleRouteFiles as $moduleRouteFile) {
+        require $moduleRouteFile;
+    }
+});
+PHP
         );
     }
 
@@ -44,6 +60,7 @@ class MakeModuleCommandTest extends TestCase
 
     public function test_it_generates_a_complete_module_with_fields_and_a_sanctum_route(): void
     {
+        $originalRoutes = $this->files->get($this->projectPath.'/routes/api.php');
         $tester = $this->runCommand([
             'name' => 'LoanApplication',
             '--fields' => 'amount:decimal|required,status:string|nullable',
@@ -59,6 +76,7 @@ class MakeModuleCommandTest extends TestCase
             'app/Http/Resources/LoanApplicationResource.php',
             'app/Services/LoanApplicationService.php',
             'app/Repositories/LoanApplicationRepository.php',
+            'routes/api/loan-applications.php',
         ];
 
         foreach ($expectedFiles as $relativePath) {
@@ -74,7 +92,7 @@ class MakeModuleCommandTest extends TestCase
         $storeRequest = $this->files->get($this->projectPath.'/app/Http/Requests/StoreLoanApplicationRequest.php');
         $updateRequest = $this->files->get($this->projectPath.'/app/Http/Requests/UpdateLoanApplicationRequest.php');
         $controller = $this->files->get($this->projectPath.'/app/Http/Controllers/LoanApplicationController.php');
-        $routes = $this->files->get($this->projectPath.'/routes/api.php');
+        $moduleRoutes = $this->files->get($this->projectPath.'/routes/api/loan-applications.php');
 
         $this->assertStringContainsString("'amount',", $model);
         $this->assertStringContainsString("'status',", $model);
@@ -85,9 +103,26 @@ class MakeModuleCommandTest extends TestCase
         $this->assertStringContainsString('function show(LoanApplication $loanApplication)', $controller);
         $this->assertStringContainsString('Response::HTTP_CREATED', $controller);
         $this->assertStringContainsString('return response()->noContent();', $controller);
-        $this->assertStringContainsString('use App\Http\Controllers\LoanApplicationController;', $routes);
-        $this->assertStringContainsString("Route::middleware('auth:sanctum')->group", $routes);
-        $this->assertSame(1, substr_count($routes, "Route::apiResource('loan-applications'"));
+        $this->assertStringContainsString('use App\Http\Controllers\LoanApplicationController;', $moduleRoutes);
+        $this->assertStringContainsString(
+            "Route::apiResource('loan-applications', LoanApplicationController::class);",
+            $moduleRoutes
+        );
+        $this->assertSame($originalRoutes, $this->files->get($this->projectPath.'/routes/api.php'));
+
+        Route::middleware('api')
+            ->prefix('api')
+            ->group($this->projectPath.'/routes/api.php');
+
+        $generatedRoutes = collect(Route::getRoutes()->getRoutes())
+            ->filter(fn ($route) => str_starts_with($route->uri(), 'api/loan-applications'));
+
+        $this->assertCount(5, $generatedRoutes);
+
+        foreach ($generatedRoutes as $route) {
+            $this->assertContains('api', $route->middleware());
+            $this->assertContains('auth:sanctum', $route->middleware());
+        }
     }
 
     public function test_it_generates_a_safe_skeleton_without_fields(): void
@@ -156,21 +191,31 @@ class MakeModuleCommandTest extends TestCase
 
     public function test_route_collision_aborts_before_writing_files(): void
     {
-        $routePath = $this->projectPath.'/routes/api.php';
-        $this->files->put(
-            $routePath,
-            $this->files->get($routePath)."\nRoute::apiResource('orders', ExistingController::class);\n"
-        );
-        $originalRoutes = $this->files->get($routePath);
+        $this->files->makeDirectory($this->projectPath.'/routes/api', 0755, true);
+        $routePath = $this->projectPath.'/routes/api/orders.php';
+        $this->files->put($routePath, "<?php\n// existing\n");
 
         $tester = $this->runCommand(['name' => 'Order']);
 
         $this->assertSame(1, $tester->getStatusCode());
         $this->assertDirectoryDoesNotExist($this->projectPath.'/app');
-        $this->assertSame($originalRoutes, $this->files->get($routePath));
+        $this->assertSame("<?php\n// existing\n", $this->files->get($routePath));
     }
 
-    public function test_write_failure_rolls_back_files_directories_and_routes(): void
+    public function test_missing_module_route_loader_aborts_before_writing_files(): void
+    {
+        $routePath = $this->projectPath.'/routes/api.php';
+        $this->files->put($routePath, "<?php\n\nRoute::get('/health', fn () => ['ok' => true]);\n");
+
+        $tester = $this->runCommand(['name' => 'Order']);
+
+        $this->assertSame(1, $tester->getStatusCode());
+        $this->assertStringContainsString('Restore the routes/api.php loader', $tester->getDisplay());
+        $this->assertDirectoryDoesNotExist($this->projectPath.'/app');
+        $this->assertDirectoryDoesNotExist($this->projectPath.'/routes/api');
+    }
+
+    public function test_modular_route_write_failure_rolls_back_files_and_directories(): void
     {
         $routePath = $this->projectPath.'/routes/api.php';
         $originalRoutes = $this->files->get($routePath);
@@ -178,7 +223,7 @@ class MakeModuleCommandTest extends TestCase
         {
             public function put($path, $contents, $lock = false)
             {
-                if (str_ends_with($path, '/routes/api.php') && str_contains($contents, 'Route::apiResource')) {
+                if (str_ends_with($path, '/routes/api/orders.php')) {
                     parent::put($path, "<?php\n// partial write\n", $lock);
 
                     throw new \RuntimeException('Simulated route write failure.');
@@ -196,6 +241,7 @@ class MakeModuleCommandTest extends TestCase
         $this->assertSame(1, $tester->getStatusCode());
         $this->assertSame($originalRoutes, $this->files->get($routePath));
         $this->assertDirectoryDoesNotExist($this->projectPath.'/app');
+        $this->assertDirectoryDoesNotExist($this->projectPath.'/routes/api');
     }
 
     /**
