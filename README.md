@@ -60,3 +60,51 @@ docker compose down
 # Stop services and remove database/Redis data
 docker compose down -v
 ```
+
+## Generate a CRUD module
+
+Use `make:module` to generate a CRUD API module:
+
+```sh
+docker compose exec app php artisan make:module Product \
+  --fields="name:string|required,price:decimal|required"
+```
+
+The `--fields` option accepts comma-separated definitions in
+`name:type|rule` format. Validation rules after the type are optional.
+Supported types are `array`, `boolean`, `date`, `datetime`, `decimal`,
+`email`, `integer`, `json`, `numeric`, `string`, `text`, `url`, and `uuid`.
+
+You can also generate a module without fields and add the fillable fields
+and validation rules later:
+
+```sh
+docker compose exec app php artisan make:module AuditLog
+```
+
+For the `Product` example, the command generates this structure:
+
+```text
+app/
+├── Http/
+│   ├── Controllers/
+│   │   └── ProductController.php
+│   ├── Requests/
+│   │   ├── StoreProductRequest.php
+│   │   └── UpdateProductRequest.php
+│   └── Resources/
+│       └── ProductResource.php
+├── Models/
+│   └── Product.php
+├── Repositories/
+│   └── ProductRepository.php
+└── Services/
+    └── ProductService.php
+routes/
+└── api/
+    └── products.php
+```
+
+The generated route uses `Route::apiResource` and is loaded under the
+`/api` prefix with `auth:sanctum` middleware. The command does not create a
+migration or factory.
