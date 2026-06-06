@@ -23,7 +23,7 @@ return new class extends Migration
                 ->restrictOnDelete();
 
             $table->foreignId('sale_event_id')
-                ->constrained()
+                ->constrained('sales_events')
                 ->cascadeOnDelete();
 
             $table->unsignedInteger('quantity')->default(1);
