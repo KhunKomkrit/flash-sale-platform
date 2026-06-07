@@ -37,7 +37,7 @@ return new class extends Migration
             // Composite index for common dashboard/user history query:
             // WHERE user_id = ? AND status = ? ORDER BY created_at DESC.
             // Composite is better than single user_id because it supports filtering by user + status
-            // and reduces filesort for latest orders. Trade-off: extra write/storage overhead on every order insert/update.
+            // and may reduce filesort for latest orders. Trade-off: extra write/storage overhead on every order insert/update.
             $table->index(['user_id', 'status', 'created_at'], 'idx_orders_user_status_created');
 
             // Composite index for event dashboard pagination:
