@@ -216,6 +216,7 @@ docker compose down -v
 
 ## Task 2 - Database and Indexing (Implemented Portion)
 
+#### 2a — Schema Implementation
 The project includes migrations and Eloquent models for:
 
 - users
@@ -223,16 +224,66 @@ The project includes migrations and Eloquent models for:
 - sale events
 - orders
 - order logs
-- Sanctum personal access tokens
-- failed jobs
 
-The domain schema includes foreign keys, soft deletes for products and orders,
-a unique SKU constraint, a unique user/product/sale-event order constraint,
-and composite indexes for product listings, active events, order history,
-event dashboards, product sales, and order-log lookups.
+#### 2c — Written Explanation
 
-The assessment answers and measured `EXPLAIN ANALYZE` evidence are not included
-here because that work is not complete.
+Q1. The orders table has columns: id, user_id, product_id, sale_event_id, status, created_at. 
+A common query is: "fetch all orders by a specific user, filtered by status, sorted by created_at DESC."
+Would you use a single-column index on user_id, or a composite index?
+
+Write the exact index and justify your choice =>
+
+`I would use a composite index instead of a single-column index on 'user_id'
+Exact index:`
+
+```php
+$table->index(['user_id', 'status', 'created_at'], 'idx_orders_user_status_created_at');
+```
+`This index matches the common query pattern:`
+```sql
+SELECT * FROM orders
+WHERE user_id = ?
+AND status = ?
+ORDER BY created_at DESC;
+```
+
+`A single-column index on user_id would only help MySQL find orders for a specific user, but MySQL would still need to filter by status and may need an extra sort step for created_at DESC.`
+
+`The composite index is better because user_id narrows the result set first, status filters it further, and created_at helps MySQL return the latest orders more efficiently.`
+
+Q2. Give one real example (from any table in this project) where adding an index could cause a
+deadlock or make things worse under concurrent writes. Explain the mechanism. =>
+
+`A real example in this project is adding a standalone index on 'orders.status'
+This index is not a good choice for a high-write flash sale workload because status is a low-cardinality column. Most rows may have only a few repeated values such as pending, paid, cancelled, or failed.`
+
+Q3. Give one example of an index that would be useless or counterproductive in this schema (e.g.,
+low-cardinality columns, redundant coverage). Explain why MySQL/InnoDB would likely ignore it. =>
+`An example of a counterproductive index in this schema would be a standalone index on 'orders.status'`
+`This index would be counterproductive because status is a low-cardinality column with only a few distinct values. MySQL/InnoDB would likely ignore it because the index would not provide significant performance benefits and could add unnecessary overhead during write operations.`
+
+Q4. When is a covering index useful? Give a specific query from this project where you would apply
+one. =>
+
+`A covering index is useful when a frequently executed query can be answered directly from the index without reading the full table rows. This is helpful for read-heavy endpoints such as order history, dashboards, or reporting pages where the query only needs a small set of columns.`
+
+`A specific query from this project is the user order history endpoint:`
+
+```sql
+SELECT id, user_id, status, created_at
+FROM orders
+WHERE user_id = ?
+AND status = ?
+ORDER BY created_at DESC
+LIMIT 50;
+```
+`For this query, I would apply the following covering index:`
+
+```php
+$table->index(['user_id', 'status', 'created_at', 'id'], 'idx_orders_user_status_created_id');
+``` 
+
+`This index supports the filter by 'user_id' and 'status', supports sorting by 'created_at', and includes 'id' so that the selected columns can be read from the index itself.`
 
 ## Task 5 - Code Review (Implemented Corrections)
 
