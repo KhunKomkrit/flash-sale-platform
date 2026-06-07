@@ -169,3 +169,46 @@ routes/
 The generated route uses `Route::apiResource` and is loaded under the
 `/api` prefix with `auth:sanctum` middleware. The command does not create a
 migration or factory.
+
+## Generate a repository
+
+Use the custom `make:repository` command when only a repository is needed:
+
+```sh
+docker compose exec app php artisan make:repository Product
+```
+
+This creates `app/Repositories/ProductRepository.php` for
+`App\Models\Product`. Passing the suffix is also supported:
+
+```sh
+docker compose exec app php artisan make:repository ProductRepository
+```
+
+Both commands create the same `ProductRepository` class. An existing
+repository is never overwritten.
+
+## Generate a service
+
+Use `make:service` when only the service layer is needed:
+
+```sh
+docker compose exec app php artisan make:service Product
+```
+
+This creates `app/Services/ProductService.php` using
+`App\Repositories\ProductRepository`. `ProductService` is also accepted as
+the command name without duplicating the suffix.
+
+## Generate an API route
+
+Use `make:route-api` to create a modular API resource route:
+
+```sh
+docker compose exec app php artisan make:route-api Product
+```
+
+This creates `routes/api/products.php` with an `apiResource` route for
+`ProductController`. `ProductController` is also accepted as the command
+name. The command requires the modular route loader in `routes/api.php` and
+never overwrites an existing route file.
