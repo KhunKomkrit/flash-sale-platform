@@ -3,13 +3,41 @@
 Local Laravel 10 development environment using PHP 8.2-FPM, Nginx,
 MySQL 8, and Redis 7.
 
-## Start the stack
+## Requirements
+
+- Docker Desktop, or Docker Engine with Docker Compose
+- `make`
+
+macOS normally includes `make` after installing Xcode Command Line Tools:
 
 ```sh
-docker compose up --build
+xcode-select --install
+```
+
+Ubuntu/Debian users can install it with:
+
+```sh
+sudo apt-get update
+sudo apt-get install make
+```
+
+`make` is only a command shortcut. If it is unavailable, run the equivalent
+`docker compose` commands shown in the `Makefile`.
+
+## First-time setup
+
+For a new checkout, build and start the containers, create all database
+tables, and insert the initial data:
+
+```sh
+make init
 ```
 
 Open <http://localhost:8000>.
+
+> `make init` runs `php artisan migrate:fresh --seed`. It deletes all existing
+> database tables and data, so use it only for initial setup or when a complete
+> local database reset is intended.
 
 On the first start, the app container bootstraps Laravel 10 into the
 repository when `artisan` is absent. Existing repository and Docker files
@@ -22,6 +50,30 @@ disables Composer's advisory blocking for `create-project`; review
 
 The entrypoint creates `.env` and generates `APP_KEY` when needed. Database
 migrations are intentionally not run automatically.
+
+## Daily use
+
+Stop the containers without removing MySQL or Redis data:
+
+```sh
+make stop
+```
+
+Start stopped containers without resetting or seeding the database:
+
+```sh
+make start
+```
+
+Restart running containers without resetting the database:
+
+```sh
+make restart
+```
+
+The named Docker volumes `mysql_data` and `redis_data` preserve data between
+these commands. Avoid `docker compose down -v` unless the stored data should
+be deleted.
 
 ## Services
 
@@ -44,18 +96,27 @@ MYSQL_ROOT_PASSWORD=root
 ## Common commands
 
 ```sh
+# List all Make targets
+make help
+
+# Show service status
+make status
+
+# Follow service logs
+make logs
+
 # Run migrations explicitly
 docker compose exec app php artisan migrate
 
 # Run the Laravel test suite
-docker compose exec app php artisan test
+make test
 
 # Run Composer or Artisan commands
 docker compose exec app composer install
 docker compose exec app php artisan about
 
-# Stop services
-docker compose down
+# Stop services while preserving data
+make stop
 
 # Stop services and remove database/Redis data
 docker compose down -v
