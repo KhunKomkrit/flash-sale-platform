@@ -16,8 +16,8 @@ class OrderDashboardService
     {
         $cacheKey = "orders:dashboard:page:{$page}:per_page:{$perPage}";
 
-        return Cache::tags(['orders-dashboard'])->remember($cacheKey, 60, function () use ($perPage) {
-            $orders = $this->orders->paginateDashboard($perPage);
+        return Cache::tags(['orders-dashboard'])->remember($cacheKey, 60, function () use ($perPage, $page) {
+            $orders = $this->orders->paginateDashboard($perPage, $page);
 
             return [
                 'data' => $orders->getCollection()->map(function (Order $order) {

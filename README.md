@@ -10,6 +10,7 @@ Redis 7, and Docker Compose.
 | Task 1 - Setup and Architecture | Docker environment, setup commands, Sanctum route protection, layered architecture, database seeding, and custom module generators |
 | Task 2 - Database and Indexing | Database schema, constraints, foreign keys, soft deletes, and initial indexes |
 | Task 3 - Performance Optimisation | Optimized order dashboard with eager loading, pagination capped at 50 records, Redis cache TTL, and cache invalidation hook |
+| Task 4 - Queue Design | Not implemented as runnable code due to time; queue design and trade-offs are documented |
 | Task 5 - Code Review | Corrected product stock reduction, top-selling query, and active-product search |
 | Task 6 - Unit and Feature Testing | Product stock unit tests and authenticated order placement feature tests |
 
@@ -255,8 +256,9 @@ ORDER BY created_at DESC;
 Q2. Give one real example (from any table in this project) where adding an index could cause a
 deadlock or make things worse under concurrent writes. Explain the mechanism. =>
 
-`A real example in this project is adding a standalone index on 'orders.status'
-This index is not a good choice for a high-write flash sale workload because status is a low-cardinality column. Most rows may have only a few repeated values such as pending, paid, cancelled, or failed.`
+`A real example in this project is adding extra standalone indexes on high-write order columns such as 'orders.status' or 'orders.created_at' without a query that benefits from them. During a flash sale, many concurrent requests insert orders and update product stock. Every secondary index on 'orders' must also be maintained for each insert, so InnoDB has to update more B-tree pages, hold more index page locks, write more redo/undo data, and potentially split hot index pages.`
+
+`This may not directly create a deadlock by itself, but it increases lock duration and write amplification. If concurrent transactions touch tables in different orders, for example one flow inserts an order then writes an order log while another writes an order log then updates an order status, the extra index maintenance can make those locks overlap longer and make deadlocks more likely. A standalone status index is also low-cardinality, so MySQL may ignore it for reads while still paying the write cost on every order insert or status update.`
 
 Q3. Give one example of an index that would be useless or counterproductive in this schema (e.g.,
 low-cardinality columns, redundant coverage). Explain why MySQL/InnoDB would likely ignore it. =>
@@ -301,6 +303,28 @@ $table->index(['user_id', 'status', 'created_at', 'id'], 'idx_orders_user_status
 9. No caching, so repeated dashboard calls hit the database every time.
 10. No cache invalidation when new orders are placed.
 11. No query logging or measurement, so performance improvement cannot be verified.
+
+### Implemented Optimisation
+
+- Order dashboard uses eager loading for sale event, user, and product data.
+- Pagination is capped at 50 records per request.
+- The requested page is passed explicitly into Laravel pagination instead of relying on the current HTTP request.
+- Dashboard responses are cached in Redis using the `orders-dashboard` cache tag.
+- `OrderObserver` flushes the dashboard cache after order create, update, delete, restore, and force delete events. The observer handles events after database commit, so order placement invalidates the cache only after a successful committed create.
+
+## Task 4 - Queue Design
+
+Task 4 is not implemented as runnable queue code due to time. The design decision is documented here instead.
+
+For a production flash-sale workload, order placement should keep the critical request path small: validate the active sale event, atomically decrement stock, create the order, and return the result. Non-critical follow-up work should move to queues, for example sending confirmation email, writing analytics events, syncing external systems, and generating operational reports.
+
+Recommended queue design:
+
+- Use Redis queues with separate queues such as `orders`, `notifications`, and `analytics` so slow external work does not block order processing.
+- Dispatch jobs only after database commit to avoid processing rolled-back orders.
+- Make jobs idempotent by using `order_id` as the stable key and guarding against duplicate side effects.
+- Use retries with bounded backoff for transient failures, and a failed-jobs table or dead-letter workflow for manual review.
+- Keep stock decrement and duplicate-order protection synchronous in the database because those are correctness-critical and should not depend on eventual queue processing.
 
 ## Task 5 - Code Review (Implemented Corrections)
 

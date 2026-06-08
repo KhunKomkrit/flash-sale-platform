@@ -40,7 +40,7 @@ class OrderRepository
         $order->delete();
     }
 
-        public function paginateDashboard(int $perPage)
+    public function paginateDashboard(int $perPage, int $page): LengthAwarePaginator
     {
         return Order::query()
             ->with([
@@ -57,6 +57,6 @@ class OrderRepository
                 'created_at',
             ])
             ->latest()
-            ->paginate($perPage);
+            ->paginate($perPage, ['*'], 'page', $page);
     }
 }

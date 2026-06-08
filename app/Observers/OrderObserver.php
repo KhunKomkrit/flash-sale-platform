@@ -4,8 +4,9 @@ namespace App\Observers;
 
 use App\Models\Order;
 use App\Services\OrderDashboardService;
+use Illuminate\Contracts\Events\ShouldHandleEventsAfterCommit;
 
-class OrderObserver
+class OrderObserver implements ShouldHandleEventsAfterCommit
 {
     /**
      * Handle the Order "created" event.
