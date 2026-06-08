@@ -285,6 +285,22 @@ $table->index(['user_id', 'status', 'created_at', 'id'], 'idx_orders_user_status
 
 `This index supports the filter by 'user_id' and 'status', supports sorting by 'created_at', and includes 'id' so that the selected columns can be read from the index itself.`
 
+## Task 3: Performance Optimisation
+
+### Problems in the original code
+
+1. `SaleEvent::all()` loads all sale events into memory.
+2. Querying orders inside the event loop creates N+1 queries.
+3. `User::find()` inside the order loop creates another N+1 query.
+4. `Product::find()` inside the order loop creates another N+1 query.
+5. No pagination, so the endpoint can return unlimited records.
+6. Loads full Eloquent models even though only a few columns are needed.
+7. `$total` and `$revenue` are calculated but not returned, causing wasted CPU work.
+8. Revenue calculation uses product price instead of order unit_price, which may be incorrect if product price changes.
+9. No caching, so repeated dashboard calls hit the database every time.
+10. No cache invalidation when new orders are placed.
+11. No query logging or measurement, so performance improvement cannot be verified.
+
 ## Task 5 - Code Review (Implemented Corrections)
 
 The existing product service and repository provide:
