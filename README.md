@@ -9,8 +9,9 @@ Redis 7, and Docker Compose.
 | --- | --- |
 | Task 1 - Setup and Architecture | Docker environment, setup commands, Sanctum route protection, layered architecture, database seeding, and custom module generators |
 | Task 2 - Database and Indexing | Database schema, constraints, foreign keys, soft deletes, and initial indexes |
+| Task 3 - Performance Optimisation | Optimized order dashboard with eager loading, pagination capped at 50 records, Redis cache TTL, and cache invalidation hook |
 | Task 5 - Code Review | Corrected product stock reduction, top-selling query, and active-product search |
-| Supporting tests | Generator tests currently pass; this does not represent completion of Task 6 domain testing |
+| Task 6 - Unit and Feature Testing | Product stock unit tests and authenticated order placement feature tests |
 
 ## Task 1 - Setup and Architecture
 
@@ -303,6 +304,23 @@ $table->index(['user_id', 'status', 'created_at', 'id'], 'idx_orders_user_status
 
 ## Task 5 - Code Review (Implemented Corrections)
 
+### Merge Request Review Comments
+
+`reduceStock`
+
+- Problem: The original code used `Product::find()` and then updated `$product->stock` in PHP. Risk: two concurrent requests can both read the same stock value and oversell the product.
+- Recommended fix: validate that quantity is positive and use one atomic database update guarded by `WHERE stock >= ?`. The implemented repository method returns success only when one row is decremented.
+
+`getTopSellingProducts`
+
+- Problem: The original code loaded every order into memory and counted products in PHP. Risk: memory usage and response time grow with the full orders table, which is unsafe for a flash-sale workload.
+- Recommended fix: aggregate in the database, filter to paid orders, group by product, sort by order count, and limit the result set.
+
+`searchProducts`
+
+- Problem: The original code concatenated user input into raw SQL. Risk: SQL injection, no active-product filtering, and no result bound.
+- Recommended fix: trim the keyword and use Eloquent's parameter binding through `where('name', 'like', ...)`, return active products only, and apply a limit.
+
 The existing product service and repository provide:
 
 - positive-quantity validation before stock reduction
@@ -312,7 +330,22 @@ The existing product service and repository provide:
 - trimmed active-product name search
 - bounded results through method limit parameters
 
-## Supporting Test Evidence
+## Task 6 - Unit and Feature Testing
+
+Implemented tests cover:
+
+- `ProductService::reduceStock` success
+- insufficient stock
+- a mocked concurrent decrement race where stock is consumed before the atomic update
+- invalid non-positive quantity
+- order placement happy path
+- out-of-stock order placement
+- unauthenticated order placement
+- duplicate order in the same sale event
+
+Tests use `RefreshDatabase` with SQLite in-memory for database-backed feature coverage.
+
+## Test Evidence
 
 Run:
 
@@ -320,11 +353,8 @@ Run:
 make test
 ```
 
-Verified on June 7, 2026:
+Verified on June 8, 2026:
 
 ```text
-Tests: 30 passed (121 assertions)
+Tests: 38 passed (142 assertions)
 ```
-
-The current test suite covers the custom module, repository, service, and API
-route generators. It does not complete Task 6 domain testing.

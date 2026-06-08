@@ -127,6 +127,56 @@ Route::get('/docs/openapi.json', function () {
                     ],
                 ],
             ],
+            '/orders' => [
+                'post' => [
+                    'summary' => 'Place an order',
+                    'operationId' => 'placeOrder',
+                    'tags' => ['Orders'],
+                    'security' => [
+                        [
+                            'bearerAuth' => [],
+                        ],
+                    ],
+                    'requestBody' => [
+                        'required' => true,
+                        'content' => [
+                            'application/json' => [
+                                'schema' => [
+                                    '$ref' => '#/components/schemas/PlaceOrderRequest',
+                                ],
+                            ],
+                        ],
+                    ],
+                    'responses' => [
+                        '201' => [
+                            'description' => 'Order created',
+                            'content' => [
+                                'application/json' => [
+                                    'schema' => [
+                                        '$ref' => '#/components/schemas/OrderResponse',
+                                    ],
+                                ],
+                            ],
+                        ],
+                        '401' => [
+                            'description' => 'Unauthenticated',
+                        ],
+                        '409' => [
+                            'description' => 'Out of stock, duplicate order, or inactive sale event',
+                            'content' => [
+                                'application/json' => [
+                                    'schema' => [
+                                        '$ref' => '#/components/schemas/ErrorResponse',
+                                    ],
+                                ],
+                            ],
+                        ],
+                        '422' => [
+                            'description' => 'Validation error',
+                        ],
+                    ],
+                ],
+            ],
         ],
         'components' => [
             'securitySchemes' => [
@@ -179,6 +229,45 @@ Route::get('/docs/openapi.json', function () {
                         'product' => ['type' => 'string', 'nullable' => true],
                         'price' => ['type' => 'number', 'format' => 'float', 'nullable' => true],
                         'status' => ['type' => 'string', 'example' => 'paid'],
+                    ],
+                ],
+                'PlaceOrderRequest' => [
+                    'type' => 'object',
+                    'required' => ['product_id', 'sale_event_id'],
+                    'properties' => [
+                        'product_id' => ['type' => 'integer', 'example' => 1],
+                        'sale_event_id' => ['type' => 'integer', 'example' => 1],
+                        'quantity' => [
+                            'type' => 'integer',
+                            'minimum' => 1,
+                            'default' => 1,
+                            'example' => 1,
+                        ],
+                    ],
+                ],
+                'OrderResponse' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'data' => [
+                            '$ref' => '#/components/schemas/Order',
+                        ],
+                    ],
+                ],
+                'Order' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'id' => ['type' => 'integer', 'example' => 1001],
+                        'product_id' => ['type' => 'integer', 'example' => 1],
+                        'sale_event_id' => ['type' => 'integer', 'example' => 1],
+                        'quantity' => ['type' => 'integer', 'example' => 1],
+                        'unit_price' => ['type' => 'number', 'format' => 'float', 'example' => 199.99],
+                        'status' => ['type' => 'string', 'example' => 'pending'],
+                    ],
+                ],
+                'ErrorResponse' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'message' => ['type' => 'string', 'example' => 'Product is out of stock.'],
                     ],
                 ],
                 'PaginationMeta' => [
