@@ -3,6 +3,7 @@
 namespace App\Observers;
 
 use App\Models\Order;
+use App\Services\OrderDashboardService;
 
 class OrderObserver
 {
@@ -11,7 +12,7 @@ class OrderObserver
      */
     public function created(Order $order): void
     {
-        //
+        $this->clearDashboardCache();
     }
 
     /**
@@ -19,7 +20,7 @@ class OrderObserver
      */
     public function updated(Order $order): void
     {
-        //
+        $this->clearDashboardCache();
     }
 
     /**
@@ -27,7 +28,7 @@ class OrderObserver
      */
     public function deleted(Order $order): void
     {
-        //
+        $this->clearDashboardCache();
     }
 
     /**
@@ -35,7 +36,7 @@ class OrderObserver
      */
     public function restored(Order $order): void
     {
-        //
+        $this->clearDashboardCache();
     }
 
     /**
@@ -43,6 +44,11 @@ class OrderObserver
      */
     public function forceDeleted(Order $order): void
     {
-        //
+        $this->clearDashboardCache();
+    }
+
+    private function clearDashboardCache(): void
+    {
+        app(OrderDashboardService::class)->clearDashboardCache();
     }
 }
