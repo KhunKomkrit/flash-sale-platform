@@ -9,6 +9,8 @@ class SaleEvent extends Model
 {
     use HasFactory;
 
+    protected $table = 'sales_events';
+
     protected $fillable = [
         'name',
         'starts_at',
